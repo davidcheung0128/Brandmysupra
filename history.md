@@ -65,3 +65,11 @@ A running log of what has been done on Brand My Supra. Newest entries are at the
 - Payments were deferred. A company-email gate was requested instead of checkout.
 - The GLB was integrated in that session, then the showroom, curved decals, landing page, and a seven-step surface upgrade were described as done there. Those file versions are what `b5bae40` contains.
 - That session never created or pushed a repository.
+
+## 2026-09-24 — Sections refit to the real Supra mesh; logo conforms to the paint
+
+- Cause of "bad sections": panel frames were written for the stand-in model, and the GLB is modelled ~7° off its axle line, so slots never sat on the Sketchfab body. The car is now squared to +x (`CAR_YAW` in `src/App.jsx`) and every panel/slot in `src/slots.js` is fitted to measured geometry (car-group space: +x nose, +y up, +z driver side). Slots tile each panel's bounds exactly; outlines follow the wheel arch, nose taper, etc.
+- `src/sections.js`: section outlines (draped, numbered, selected slot tinted) and logo clipping both run in a shader in panel space, so the logo is cut exactly at the selected slots' boundary no matter how the surface curves.
+- Logo now fits the section (100% scale fills the selected slots), reads upright along the panel's u axis, is lit with the same clearcoat as the paint, and fades where the surface turns away from the projector.
+- Fixed: panel picking and pointer hits ignored which side of the car was clicked; a stale "snap" effect could overwrite the placement seeded on a panel change.
+- Front/rear/roof/side views were checked with headless Chrome screenshots; rear-deck outline was checked by ray sampling only (tour camera never settled there in headless).

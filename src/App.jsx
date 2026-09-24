@@ -8,20 +8,21 @@ import {
   clampToPlacementRegion,
   isEntirePanelSelected,
   panelBounds,
-  panelMaskPoints,
-  placementRegionLoops,
   pointInPlacementRegion,
 } from "./surface.js";
+import { bindPanelSpace, outlineTexture, regionTexture } from "./sections.js";
 import {
   buildLocalDecalGeometry,
   coverageRatio,
   localProjectorFromPlacement,
+  modelRootFromObject,
   panelFrameNormal,
   panelFramePoint,
   placementFromHit,
   projectOntoPaintMeshes,
   updatePlacement,
   uvScaleFromHit,
+  worldNormalFromHit,
   worldToModelPoint,
   worldToPanelUV,
 } from "./placement.js";
@@ -39,6 +40,7 @@ import { cinemaRefs, panelTourFromProgress, progressForPanel, sceneWeights } fro
 import { useSmoothScroll } from "./motion/useSmoothScroll.js";
 
 const DEFAULT_SCALE = 0.82;
+const CAR_YAW = 0.1225;
 
 function slotBounds(selected) {
   const slots = selected.map((id) => SLOT_MAP[id]);
@@ -60,50 +62,7 @@ function slotBounds(selected) {
   };
 }
 
-/** Alpha mask in decal space — white inside chosen region, transparent outside (logo cut-off). */
-function placementRegionMaskTexture(panel, slots, entirePanel, centerU, centerV, width, height, rotation = 0) {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, size, size);
-  context.fillStyle = "#ffffff";
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const toXY = (u, v) => {
-    const dx = u - centerU;
-    const dy = v - centerV;
-    const localX = dx * cos + dy * sin;
-    const localY = -dx * sin + dy * cos;
-    return [(localX / width + 0.5) * size, (0.5 - localY / height) * size];
-  };
-  const fillLoop = (loop) => {
-    context.beginPath();
-    loop.forEach(([u, v], index) => {
-      const [x, y] = toXY(u, v);
-      if (index) context.lineTo(x, y);
-      else context.moveTo(x, y);
-    });
-    context.closePath();
-    context.fill();
-  };
-
-  const loops = placementRegionLoops(panel, slots, { entirePanel });
-  loops.forEach(fillLoop);
-
-  if (!entirePanel && slots.length) {
-    context.globalCompositeOperation = "destination-in";
-    fillLoop(panelMaskPoints(panel));
-    context.globalCompositeOperation = "source-over";
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.NoColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function nearestPanelKey(point) {
+function nearestPanelKey(point, normal) {
   let best = null;
   let bestScore = Infinity;
   for (const [key, panel] of Object.entries(PANELS)) {
@@ -111,7 +70,8 @@ function nearestPanelKey(point) {
     const bounds = panelBounds(panel);
     const cu = THREE.MathUtils.clamp(u, bounds.minU, bounds.maxU);
     const cv = THREE.MathUtils.clamp(v, bounds.minV, bounds.maxV);
-    const score = (u - cu) ** 2 + (v - cv) ** 2;
+    // Panels facing away from the click (e.g. the other side of the car) never win.
+    const score = (u - cu) ** 2 + (v - cv) ** 2 + (normal.dot(panelFrameNormal(panel)) < 0.3 ? 100 : 0);
     if (score < bestScore) {
       bestScore = score;
       best = key;
@@ -127,6 +87,7 @@ function selectedSlots(selected) {
 function hitOnSelectedPanel(hit, selected) {
   if (!selected.length) return false;
   const panel = PANELS[SLOT_MAP[selected[0]].panel];
+  if (worldNormalFromHit(hit).dot(panelFrameNormal(panel).transformDirection(modelRootFromObject(hit.object).matrixWorld)) < 0.3) return false;
   const modelPoint = worldToModelPoint(hit.object, hit.point);
   const [u, v] = worldToPanelUV(panel, modelPoint);
   const slots = selectedSlots(selected);
@@ -150,20 +111,15 @@ function SurfaceDecal({ url, placement, aspect, maxWidth, maxHeight, paintMeshes
   const slots = selectedSlots(selectedIds);
   const entirePanel = isEntirePanelSelected(maskPanel, selectedIds);
 
-  const targetMeshes = useMemo(() => {
-    if (!placement.meshUuid) return paintMeshes;
-    const match = paintMeshes.filter((mesh) => mesh.uuid === placement.meshUuid);
-    return match.length ? match : paintMeshes;
-  }, [paintMeshes, placement.meshUuid]);
-
   const portals = useMemo(() => {
-    return targetMeshes.map((mesh) => {
+    // Every paint mesh, so a section that spans several body pieces still shows the whole logo.
+    return paintMeshes.map((mesh) => {
       const { position, orientation } = localProjectorFromPlacement(placement, mesh);
       const geometry = buildLocalDecalGeometry(mesh, position, orientation, size);
-      return { mesh, geometry, position };
+      return { mesh, geometry, position, projection: new THREE.Vector3(0, 0, 1).applyEuler(orientation) };
     }).filter((entry) => entry.geometry.attributes.position.count > 0);
   }, [
-    targetMeshes,
+    paintMeshes,
     placement.localPoint?.join(),
     placement.localNormal?.join(),
     placement.surfacePoint.join(),
@@ -174,45 +130,67 @@ function SurfaceDecal({ url, placement, aspect, maxWidth, maxHeight, paintMeshes
     size.z,
   ]);
 
-  const modelPoint = useMemo(() => {
-    if (!portals[0]) return new THREE.Vector3(...placement.surfacePoint);
-    return worldToModelPoint(portals[0].mesh, portals[0].mesh.localToWorld(portals[0].position.clone()));
-  }, [portals, placement.surfacePoint.join()]);
-
-  const [centerU, centerV] = worldToPanelUV(maskPanel, modelPoint);
-  const mask = useMemo(
-    () => placementRegionMaskTexture(
-      maskPanel,
-      slots,
-      entirePanel,
-      centerU,
-      centerV,
-      Math.max(size.x, 0.2),
-      Math.max(size.y, 0.2),
-      placement.rotation,
-    ),
-    [maskPanel, selectedIds.join("|"), entirePanel, centerU, centerV, size.x, size.y, placement.rotation],
+  const region = useMemo(
+    () => regionTexture(maskPanel, slots, entirePanel),
+    [maskPanel, selectedIds.join("|"), entirePanel],
   );
+  const materials = useMemo(() => portals.map(({ projection }) => bindPanelSpace(
+    // Lit like the body paint (same clearcoat), so reflections and shading flow across the logo.
+    new THREE.MeshPhysicalMaterial({
+      map: texture,
+      transparent: true,
+      alphaTest: 0.04,
+      metalness: 0.18,
+      roughness: 0.2,
+      clearcoat: 1,
+      clearcoatRoughness: 0.06,
+      envMapIntensity: 1.55,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -8,
+      polygonOffsetUnits: -8,
+    }),
+    maskPanel,
+    region,
+    "clip",
+    projection,
+  )), [portals, texture, maskPanel, region]);
 
   useEffect(() => () => portals.forEach((entry) => entry.geometry.dispose()), [portals]);
-  useEffect(() => () => mask.dispose(), [mask]);
+  useEffect(() => () => region.texture.dispose(), [region]);
+  useEffect(() => () => materials.forEach((material) => material.dispose()), [materials]);
 
-  return portals.map(({ mesh, geometry }, index) => createPortal(
-    <mesh key={`${mesh.uuid}-${index}`} geometry={geometry} renderOrder={4} raycast={() => null}>
-      <meshBasicMaterial
-        map={texture}
-        alphaMap={mask}
-        transparent
-        alphaTest={0.04}
-        toneMapped={false}
-        depthWrite={false}
-        depthTest
-        polygonOffset
-        polygonOffsetFactor={-8}
-        polygonOffsetUnits={-8}
-      />
-    </mesh>,
-    mesh,
+  return portals.map(({ mesh, geometry }, index) => (
+    <React.Fragment key={mesh.uuid}>
+      {createPortal(<mesh geometry={geometry} material={materials[index]} renderOrder={4} raycast={() => null} />, mesh)}
+    </React.Fragment>
+  ));
+}
+
+/** Slot boundaries for the active panel, draped on the paint so bidders see each section. */
+function SectionOutlines({ panel, selectedIds, paintMeshes }) {
+  const outline = useMemo(() => outlineTexture(panel, selectedIds), [panel, selectedIds.join("|")]);
+  const materials = useMemo(() => paintMeshes.map(() => bindPanelSpace(
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      toneMapped: false,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+    }),
+    panel,
+    outline,
+    "draw",
+  )), [paintMeshes, panel, outline]);
+
+  useEffect(() => () => outline.texture.dispose(), [outline]);
+  useEffect(() => () => materials.forEach((material) => material.dispose()), [materials]);
+
+  return paintMeshes.map((mesh, index) => (
+    <React.Fragment key={mesh.uuid}>
+      {createPortal(<mesh geometry={mesh.geometry} material={materials[index]} renderOrder={3} raycast={() => null} />, mesh)}
+    </React.Fragment>
   ));
 }
 
@@ -312,7 +290,9 @@ function BodyPointerLayer({
       if (!hit) return;
       if (!hasLogoRef.current) {
         const modelPoint = worldToModelPoint(hit.object, hit.point);
-        const panelKey = nearestPanelKey(modelPoint);
+        const root = modelRootFromObject(hit.object);
+        const modelNormal = worldNormalFromHit(hit).transformDirection(root.matrixWorld.clone().invert());
+        const panelKey = nearestPanelKey(modelPoint, modelNormal);
         if (panelKey) onPanelPick(panelKey);
         return;
       }
@@ -438,7 +418,8 @@ function SupraModel({
 
     let box = new THREE.Box3().setFromObject(clone);
     const rawSize = box.getSize(new THREE.Vector3());
-    if (rawSize.z > rawSize.x) clone.rotation.y = Math.PI / 2;
+    // The GLB is modelled ~7° off its own axle line; undo that so the car sits square to +x.
+    if (rawSize.z > rawSize.x) clone.rotation.y = Math.PI / 2 - CAR_YAW;
     clone.updateMatrixWorld(true);
     box = new THREE.Box3().setFromObject(clone);
     const size = box.getSize(new THREE.Vector3());
@@ -483,14 +464,15 @@ function SupraModel({
 
   const panel = selected.length ? PANELS[SLOT_MAP[selected[0]].panel] : null;
   const bounds = selected.length ? slotBounds(selected) : null;
-  const coverage = panel ? coverageRatio(selected, panel) : 1;
-  const maxWidth = bounds ? bounds.width * coverage : 1;
-  const maxHeight = bounds ? bounds.height * coverage : 1;
+  // The logo fits the chosen section itself: 100% scale fills the selected slots' bounds.
+  const maxWidth = bounds ? bounds.width : 1;
+  const maxHeight = bounds ? bounds.height : 1;
   const showDecal = logoUrl && placement && selected.length > 0 && !baked;
 
   return (
     <>
       <primitive object={model} />
+      {interactive && panel && !baked && <SectionOutlines panel={panel} selectedIds={selected} paintMeshes={paintMeshes} />}
       {showDecal && (
         <SurfaceDecal
           url={logoUrl}
@@ -648,7 +630,8 @@ export default function App() {
     const meshes = paintApiRef.current.paintMeshes;
     if (!meshes?.length || !placement || placement.localPoint) return;
     const next = seedPlacement(selected, meshes);
-    if (next?.localPoint) setPlacement(next);
+    // Only replace the placement we started from, so a newer seed (panel change) is never overwritten.
+    if (next?.localPoint) setPlacement((current) => (current === placement ? next : current));
   }, [selected, placement, progress]);
 
   useEffect(() => () => logoUrl && URL.revokeObjectURL(logoUrl), [logoUrl]);

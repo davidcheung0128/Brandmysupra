@@ -1,10 +1,5 @@
 export function panelBounds(panel) {
-  return {
-    minU: Math.min(...panel.slots.map((slot) => slot.u - slot.width / 2)),
-    maxU: Math.max(...panel.slots.map((slot) => slot.u + slot.width / 2)),
-    minV: Math.min(...panel.slots.map((slot) => slot.v - slot.height / 2)),
-    maxV: Math.max(...panel.slots.map((slot) => slot.v + slot.height / 2)),
-  };
+  return panel.bounds;
 }
 
 export function slotRect(slot) {
@@ -48,11 +43,7 @@ export function isEntirePanelSelected(panel, selectedIds) {
 }
 
 export function panelMaskPoints(panel) {
-  const bounds = panelBounds(panel);
-  return panel.mask.map(([x, y]) => [
-    bounds.minU + x * (bounds.maxU - bounds.minU),
-    bounds.minV + y * (bounds.maxV - bounds.minV),
-  ]);
+  return panel.outline;
 }
 
 export function pointInPolygon([x, y], polygon) {

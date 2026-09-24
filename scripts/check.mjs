@@ -11,7 +11,13 @@ assert.equal(isCompanyEmail("hello@gmail.com"), false);
 assert.equal(isCompanyEmail("not-an-email"), false);
 assert.equal(nextBidForSlots(["hood-1", "hood-2"], SLOT_MAP, INITIAL_BIDS), 5750);
 const doorMask = panelMaskPoints(PANELS.driverDoor);
-assert.equal(pointInPolygon([0, 0], doorMask), true);
+assert.equal(pointInPolygon([-0.2, 0.8], doorMask), true);
+assert.equal(pointInPolygon([-0.2, 0.1], doorMask), false);
+for (const panel of Object.values(PANELS)) {
+  const { minU, maxU, minV, maxV } = panel.bounds;
+  const area = panel.slots.reduce((sum, slot) => sum + slot.width * slot.height, 0);
+  assert.ok(Math.abs(area - (maxU - minU) * (maxV - minV)) < 1e-9, `${panel.label} slots tile its bounds`);
+}
 assert.notDeepEqual(clampToPanelMask(PANELS.driverDoor, 99, 99), [99, 99]);
 
 const placement = createPlacement({

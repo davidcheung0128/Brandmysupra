@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
+import { PANELS } from "./slots.js";
 
 /** Model-space placement for surface decals and re-editable UV bake. */
 export function createPlacement({
@@ -93,13 +94,38 @@ export function orientationFromNormal(normalArray, rotation = 0) {
   return helper.rotation.clone();
 }
 
+/**
+ * Decal orientation that reads upright on its panel: +x follows the panel's uAxis, +z is the
+ * outward surface normal, and `rotation` spins the logo about that normal.
+ * All vectors are mesh-local; `toModel` carries mesh-local directions into car-group space.
+ */
+function panelOrientation(panel, localNormal, toModel, rotation) {
+  const normal = localNormal.clone().normalize();
+  const right = new THREE.Vector3(...panel.uAxis).applyMatrix3(new THREE.Matrix3().setFromMatrix4(toModel).invert());
+  right.addScaledVector(normal, -right.dot(normal));
+  if (right.lengthSq() < 1e-6) return orientationFromNormal(normal.toArray(), rotation);
+  right.normalize();
+  const up = normal.clone().cross(right);
+  const basis = new THREE.Matrix4().makeBasis(right, up, normal)
+    .multiply(new THREE.Matrix4().makeRotationZ(rotation));
+  return new THREE.Euler().setFromRotationMatrix(basis);
+}
+
 /** Resolve mesh-local projector pose from a stored placement. */
 export function localProjectorFromPlacement(placement, mesh) {
   mesh.updateWorldMatrix(true, false);
+  const panel = PANELS[placement.panelMesh];
+  const root = modelRootFromObject(mesh);
+  root.updateWorldMatrix(true, false);
+  const toModel = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(mesh.matrixWorld);
+  const orient = (localNormal) => (panel
+    ? panelOrientation(panel, localNormal, toModel, placement.rotation)
+    : orientationFromNormal(localNormal.toArray(), placement.rotation));
+
   if (placement.localPoint && placement.localNormal) {
     return {
       position: new THREE.Vector3(...placement.localPoint),
-      orientation: orientationFromNormal(placement.localNormal, placement.rotation),
+      orientation: orient(new THREE.Vector3(...placement.localNormal)),
     };
   }
   const worldPoint = new THREE.Vector3(...placement.surfacePoint);
@@ -107,10 +133,7 @@ export function localProjectorFromPlacement(placement, mesh) {
   const localPoint = mesh.worldToLocal(worldPoint.clone());
   const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
   const localNormal = worldNormal.clone().transformDirection(inv).normalize();
-  return {
-    position: localPoint,
-    orientation: orientationFromNormal(localNormal.toArray(), placement.rotation),
-  };
+  return { position: localPoint, orientation: orient(localNormal) };
 }
 
 /**
@@ -144,12 +167,7 @@ export function panelFramePoint(panel, u, v) {
 }
 
 export function panelFrameNormal(panel) {
-  const normal = new THREE.Vector3(...panel.uAxis)
-    .normalize()
-    .cross(new THREE.Vector3(...panel.vAxis).normalize())
-    .normalize();
-  if (normal.lengthSq() < 0.05) normal.set(0, 1, 0);
-  return normal;
+  return new THREE.Vector3(...panel.normal).normalize();
 }
 
 export function worldToPanelUV(panel, point) {
@@ -160,12 +178,10 @@ export function worldToPanelUV(panel, point) {
   return [delta.dot(uAxis), delta.dot(vAxis)];
 }
 
-/** Climb to the model root under the cinema car group. */
+/** The car group (direct child of the scene): the space panel frames are defined in. */
 export function modelRootFromObject(object) {
   let root = object;
-  while (root.parent && root.parent.parent && root.parent.parent.type !== "Scene") {
-    root = root.parent;
-  }
+  while (root.parent && root.parent.type !== "Scene") root = root.parent;
   return root;
 }
 
@@ -195,8 +211,9 @@ export function projectOntoPaintMeshes(meshes, guessPointModel, guessNormalModel
   for (const sign of [1, -1]) {
     const origin = guessPoint.clone().addScaledVector(guessNormal, reach * sign);
     raycaster.set(origin, guessNormal.clone().multiplyScalar(-sign));
-    const hits = raycaster.intersectObjects(meshes, false);
-    if (hits[0]) candidates.push(hits[0]);
+    // Skip surfaces facing away from the panel (e.g. the far side of the car through a wheel arch).
+    const hit = raycaster.intersectObjects(meshes, false).find((entry) => worldNormalFromHit(entry).dot(guessNormal) > 0.3);
+    if (hit) candidates.push(hit);
   }
 
   if (!candidates.length) {

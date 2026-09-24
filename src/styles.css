@@ -56,7 +56,7 @@ nav a:first-child:hover { color: white; filter: brightness(1.06); }
 
 .cinema-stage {
   position: relative;
-  height: 900vh;
+  height: 1500vh;
   background:
     radial-gradient(ellipse 100% 80% at 60% 40%, #1c2029 0%, transparent 55%),
     linear-gradient(180deg, #12141a 0%, #0a0b0e 100%);
@@ -305,7 +305,7 @@ footer p { color: #777; margin: 0; }
 @media (max-width: 900px) {
   nav a:not(:first-child) { display: none; }
   .section-heading { align-items: flex-start; flex-direction: column; }
-  .cinema-stage { height: 720vh; }
+  .cinema-stage { height: 1200vh; }
   .cinema-copy { left: 5vw; top: 10vh; max-width: 88vw; }
   .hero-title { font-size: clamp(48px, 13vw, 88px); }
   .cinema-wordmark { left: 50%; top: 36%; font-size: clamp(96px, 28vw, 200px); opacity: .28; }

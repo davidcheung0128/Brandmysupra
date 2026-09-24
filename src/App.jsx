@@ -16,7 +16,6 @@ import {
   buildLocalDecalGeometry,
   coverageRatio,
   localProjectorFromPlacement,
-  orientationFromNormal,
   panelFrameNormal,
   panelFramePoint,
   placementFromHit,
@@ -25,12 +24,10 @@ import {
   uvScaleFromHit,
   worldToModelPoint,
   worldToPanelUV,
-  modelRootFromObject,
 } from "./placement.js";
 import {
   bakePlacementToAtlas,
   canvasToObjectUrl,
-  hullHandlePoints,
   logoWorldSize,
   prepareLogo,
 } from "./logo.js";
@@ -143,166 +140,6 @@ function projectUvOntoPaint(panel, paintMeshes, u, v) {
   return projectOntoPaintMeshes(paintMeshes, guess, guessNormal);
 }
 
-/** Sample a closed UV polyline onto paint meshes as mesh-local points (slightly lifted). */
-function sampleUvLoopOnPaint(panel, paintMeshes, uvLoop, samplesPerEdge = 10) {
-  const panelNormal = panelFrameNormal(panel);
-  const byMesh = new Map();
-
-  const pushPoint = (mesh, worldPoint, faceNormal) => {
-    mesh.updateWorldMatrix(true, false);
-    const local = mesh.worldToLocal(worldPoint.clone());
-    const localN = faceNormal
-      ? faceNormal.clone().normalize()
-      : panelNormal.clone().transformDirection(new THREE.Matrix4().copy(mesh.matrixWorld).invert()).normalize();
-    local.addScaledVector(localN, 0.006);
-    if (!byMesh.has(mesh)) byMesh.set(mesh, []);
-    byMesh.get(mesh).push(local);
-  };
-
-  for (let edge = 0; edge < uvLoop.length; edge += 1) {
-    const [u0, v0] = uvLoop[edge];
-    const [u1, v1] = uvLoop[(edge + 1) % uvLoop.length];
-    for (let i = 0; i < samplesPerEdge; i += 1) {
-      const t = i / samplesPerEdge;
-      const u = u0 + (u1 - u0) * t;
-      const v = v0 + (v1 - v0) * t;
-      const guess = panelFramePoint(panel, u, v);
-      const hit = projectOntoPaintMeshes(paintMeshes, guess, panelNormal);
-      if (hit) {
-        pushPoint(hit.object, hit.point, hit.face?.normal);
-      } else if (paintMeshes[0]) {
-        const root = modelRootFromObject(paintMeshes[0]);
-        root.updateWorldMatrix(true, false);
-        pushPoint(paintMeshes[0], root.localToWorld(guess.clone()), null);
-      }
-    }
-  }
-
-  for (const [, points] of byMesh) {
-    if (points.length) points.push(points[0].clone());
-  }
-  return byMesh;
-}
-
-function SlotBoundaryLines({ panelKey, selected, paintMeshes, logoVisible }) {
-  const panel = PANELS[panelKey];
-  const selectedKey = selected.join("|");
-  const entirePanel = panel ? isEntirePanelSelected(panel, selected) : false;
-
-  const outlines = useMemo(() => {
-    if (!paintMeshes.length || !panel || !selected.length) return [];
-    const slots = selectedSlots(selected);
-    const loops = placementRegionLoops(panel, slots, { entirePanel });
-    const entries = [];
-
-    loops.forEach((loop, loopIndex) => {
-      const byMesh = sampleUvLoopOnPaint(panel, paintMeshes, loop, 12);
-      for (const [mesh, points] of byMesh) {
-        if (points.length < 2) continue;
-        const positions = new Float32Array(points.length * 3);
-        points.forEach((point, index) => {
-          positions[index * 3] = point.x;
-          positions[index * 3 + 1] = point.y;
-          positions[index * 3 + 2] = point.z;
-        });
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        entries.push({
-          id: `${loopIndex}-${mesh.uuid}`,
-          mesh,
-          geometry,
-        });
-      }
-    });
-
-    return entries;
-  }, [paintMeshes, panelKey, selectedKey, entirePanel]);
-
-  useEffect(() => () => {
-    outlines.forEach((entry) => entry.geometry.dispose());
-  }, [outlines]);
-
-  if (!outlines.length) return null;
-
-  const opacity = logoVisible ? 0.7 : 0.95;
-
-  return outlines.map(({ id, mesh, geometry }) => createPortal(
-    <line key={id} geometry={geometry} renderOrder={5} raycast={() => null}>
-      <lineBasicMaterial
-        color="#f4f4f1"
-        transparent
-        opacity={opacity}
-        depthWrite={false}
-        depthTest
-        toneMapped={false}
-      />
-    </line>,
-    mesh,
-  ));
-}
-
-function PanelTint({ selected, paintMeshes, logoVisible }) {
-  const { panel, minU, maxU, minV, maxV, centerU, centerV } = slotBounds(selected);
-  const guess = panelFramePoint(panel, centerU, centerV);
-  const guessNormal = panelFrameNormal(panel);
-  const size = new THREE.Vector3((maxU - minU) * 0.98, (maxV - minV) * 0.98, 0.55);
-
-  const portals = useMemo(() => {
-    if (!paintMeshes.length) return [];
-    const hit = projectOntoPaintMeshes(paintMeshes, guess, guessNormal);
-    const entries = [];
-    for (const mesh of paintMeshes) {
-      mesh.updateWorldMatrix(true, false);
-      let localPosition;
-      let orientation;
-      if (hit && mesh.uuid === hit.object.uuid) {
-        const projector = localProjectorFromPlacement(placementFromHit({
-          panelMesh: panel.label,
-          hit,
-          selectedSlotIds: selected,
-        }), mesh);
-        localPosition = projector.position;
-        orientation = projector.orientation;
-      } else if (!hit) {
-        const root = modelRootFromObject(mesh);
-        root.updateWorldMatrix(true, false);
-        const worldGuess = root.localToWorld(guess.clone());
-        localPosition = mesh.worldToLocal(worldGuess);
-        const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
-        const localN = guessNormal.clone().transformDirection(root.matrixWorld).transformDirection(inv).normalize();
-        orientation = orientationFromNormal(localN.toArray(), 0);
-      } else {
-        continue;
-      }
-      const geometry = buildLocalDecalGeometry(mesh, localPosition, orientation, size);
-      if (geometry.attributes.position.count === 0) {
-        geometry.dispose();
-        continue;
-      }
-      entries.push({ mesh, geometry });
-    }
-    return entries;
-  }, [paintMeshes, selected.join("|")]);
-
-  useEffect(() => () => portals.forEach((entry) => entry.geometry.dispose()), [portals]);
-
-  if (logoVisible) return null;
-  return portals.map(({ mesh, geometry }, index) => createPortal(
-    <mesh key={index} geometry={geometry} renderOrder={3} raycast={() => null}>
-      <meshStandardMaterial
-        color="#ef3e2f"
-        transparent
-        opacity={0.26}
-        roughness={0.35}
-        depthWrite={false}
-        polygonOffset
-        polygonOffsetFactor={-4}
-      />
-    </mesh>,
-    mesh,
-  ));
-}
-
 function SurfaceDecal({ url, placement, aspect, maxWidth, maxHeight, paintMeshes, maskPanel, selectedIds }) {
   const texture = useLoader(THREE.TextureLoader, url);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -377,34 +214,6 @@ function SurfaceDecal({ url, placement, aspect, maxWidth, maxHeight, paintMeshes
     </mesh>,
     mesh,
   ));
-}
-
-function ContourHandles({ placement, aspect, maxWidth, maxHeight, hull, paintMeshes }) {
-  const sizeInfo = logoWorldSize(aspect, maxWidth, maxHeight, placement.scale);
-  const mesh = paintMeshes.find((entry) => entry.uuid === placement.meshUuid) || paintMeshes[0];
-  if (!mesh) return null;
-
-  const { position, orientation } = localProjectorFromPlacement(placement, mesh);
-  const matrix = new THREE.Matrix4().makeRotationFromEuler(orientation);
-  const normal = placement.localNormal
-    ? new THREE.Vector3(...placement.localNormal).normalize()
-    : new THREE.Vector3(0, 0, 1);
-  const handles = hullHandlePoints(hull).map(([hx, hy]) => {
-    const local = new THREE.Vector3((hx - 0.5) * sizeInfo.width, (0.5 - hy) * sizeInfo.height, 0.02);
-    return position.clone().add(local.applyMatrix4(matrix)).addScaledVector(normal, 0.01);
-  });
-
-  return createPortal(
-    <>
-      {handles.map((point, index) => (
-        <mesh key={index} position={point} renderOrder={6} raycast={() => null}>
-          <sphereGeometry args={[0.028, 12, 12]} />
-          <meshStandardMaterial color="#f4f4f1" emissive="#ef3e2f" emissiveIntensity={0.35} metalness={0.4} roughness={0.35} />
-        </mesh>
-      ))}
-    </>,
-    mesh,
-  );
 }
 
 function BodyPointerLayer({
@@ -682,38 +491,17 @@ function SupraModel({
   return (
     <>
       <primitive object={model} />
-      {selected.length > 0 && (
-        <SlotBoundaryLines
-          panelKey={SLOT_MAP[selected[0]].panel}
-          selected={selected}
-          paintMeshes={paintMeshes}
-          logoVisible={Boolean(logoUrl) || Boolean(baked)}
-        />
-      )}
-      {selected.length > 0 && <PanelTint selected={selected} paintMeshes={paintMeshes} logoVisible={Boolean(logoUrl) || Boolean(baked)} />}
       {showDecal && (
-        <>
-          <SurfaceDecal
-            url={logoUrl}
-            placement={placement}
-            aspect={logoMeta?.aspect || 1}
-            maxWidth={maxWidth}
-            maxHeight={maxHeight}
-            paintMeshes={paintMeshes}
-            maskPanel={panel}
-            selectedIds={selected}
-          />
-          {!locked && (
-            <ContourHandles
-              placement={placement}
-              aspect={logoMeta?.aspect || 1}
-              maxWidth={maxWidth}
-              maxHeight={maxHeight}
-              hull={logoMeta?.hull}
-              paintMeshes={paintMeshes}
-            />
-          )}
-        </>
+        <SurfaceDecal
+          url={logoUrl}
+          placement={placement}
+          aspect={logoMeta?.aspect || 1}
+          maxWidth={maxWidth}
+          maxHeight={maxHeight}
+          paintMeshes={paintMeshes}
+          maskPanel={panel}
+          selectedIds={selected}
+        />
       )}
       <BodyPointerLayer
         paintMeshes={paintMeshes}

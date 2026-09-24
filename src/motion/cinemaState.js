@@ -95,10 +95,10 @@ export const PANEL_TOUR = [
   },
 ];
 
-const BRAND_END = 0.06;
+const BRAND_END = 0.036; // keep intro→hood ~same absolute scroll as before
 const TOUR_END = 0.9;
 /** Hold most of each panel segment for editing before blending to the next. */
-const PANEL_HOLD = 0.72;
+const PANEL_HOLD = 0.8;
 
 export function sceneWeights(progress) {
   const p = clamp01(progress);

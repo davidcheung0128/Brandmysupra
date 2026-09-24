@@ -33,10 +33,10 @@ export function useSmoothScroll({ stageSelector = "#cinema-stage", enabled = tru
 
     document.documentElement.classList.add("lenis");
     const lenis = new Lenis({
-      duration: 1.15,
+      duration: 1.35,
       easing: (t) => Math.min(1, 1.001 - 2 ** (-10 * t)),
       smoothWheel: true,
-      touchMultiplier: 1.1,
+      touchMultiplier: 1.05,
     });
     lenisRef.current = lenis;
 
@@ -53,7 +53,7 @@ export function useSmoothScroll({ stageSelector = "#cinema-stage", enabled = tru
       trigger: stage,
       start: "top top",
       end: "bottom bottom",
-      scrub: 1.05,
+      scrub: 1.4,
       onUpdate: (self) => {
         const progress = self.progress;
         cinemaRefs.progress.current = progress;

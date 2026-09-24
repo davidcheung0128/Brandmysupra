@@ -2,6 +2,20 @@
 
 A running log of what has been done on Brand My Supra. Newest entries are at the top. Update this file when a step lands or is blocked.
 
+## 2026-09-24 — Cinematic scroll studio branch
+
+- Branch: `cursor/cinematic-scroll-studio`
+- Lenis + GSAP ScrollTrigger drive a 280vh cinema stage
+- One shared R3F canvas: scroll yaws/lights the car, then unlocks the configurator rail
+- Custom cursor, magnetic CTAs, reveal text; reduced-motion shortcuts to studio
+
+## 2026-09-24 — Surface-decal / UV-bake studio pass
+
+- Added `src/placement.js` (model-space placement, normal-aligned orientation, coverage ratio, UV density helpers).
+- Added `src/logo.js` (trim, alpha convex hull, contour handles, UV atlas bake).
+- Rewired `src/App.jsx`: removed rectangular slot planes; panel tint only; raycast drag on painted body; `DecalGeometry` follows surface normal; rotation around normal; throttled rebuild; bake into body-paint `CanvasTexture`; placement kept for edit.
+- Checks and production build pass.
+
 ## 2026-09-24 — Pushed to GitHub
 
 - Successfully authenticated with GitHub as davidcheung0128

@@ -7,6 +7,46 @@ export function panelBounds(panel) {
   };
 }
 
+export function slotRect(slot) {
+  return {
+    minU: slot.u - slot.width / 2,
+    maxU: slot.u + slot.width / 2,
+    minV: slot.v - slot.height / 2,
+    maxV: slot.v + slot.height / 2,
+  };
+}
+
+/** Axis-aligned union of slot UV rectangles (multi-select allowed region). */
+export function unionSlotBounds(slots) {
+  if (!slots.length) return { minU: 0, maxU: 0, minV: 0, maxV: 0 };
+  return {
+    minU: Math.min(...slots.map((slot) => slot.u - slot.width / 2)),
+    maxU: Math.max(...slots.map((slot) => slot.u + slot.width / 2)),
+    minV: Math.min(...slots.map((slot) => slot.v - slot.height / 2)),
+    maxV: Math.max(...slots.map((slot) => slot.v + slot.height / 2)),
+  };
+}
+
+/** Closed UV loops for the chosen placement region (panel mask or each selected slot). */
+export function placementRegionLoops(panel, slots, { entirePanel = false } = {}) {
+  if (entirePanel || !slots.length) {
+    return [panelMaskPoints(panel)];
+  }
+  return slots.map((slot) => {
+    const rect = slotRect(slot);
+    return [
+      [rect.minU, rect.minV],
+      [rect.maxU, rect.minV],
+      [rect.maxU, rect.maxV],
+      [rect.minU, rect.maxV],
+    ];
+  });
+}
+
+export function isEntirePanelSelected(panel, selectedIds) {
+  return Boolean(panel?.slots?.length) && selectedIds.length >= panel.slots.length;
+}
+
 export function panelMaskPoints(panel) {
   const bounds = panelBounds(panel);
   return panel.mask.map(([x, y]) => [
@@ -44,4 +84,35 @@ export function clampToPanelMask(panel, u, v) {
     }
   }
   return closest;
+}
+
+/**
+ * Clamp UV to selected slot region ∩ panel mask.
+ * Entire-panel selection uses the full mask; otherwise the AABB of selected slots.
+ */
+export function clampToPlacementRegion(panel, slots, u, v, { entirePanel = false } = {}) {
+  if (entirePanel || !slots.length) return clampToPanelMask(panel, u, v);
+  const rect = unionSlotBounds(slots);
+  const cu = Math.min(rect.maxU, Math.max(rect.minU, u));
+  const cv = Math.min(rect.maxV, Math.max(rect.minV, v));
+  return clampToPanelMask(panel, cu, cv);
+}
+
+export function pointInPlacementRegion(panel, slots, u, v, { entirePanel = false, pad = 0 } = {}) {
+  if (entirePanel || !slots.length) {
+    const bounds = panelBounds(panel);
+    return (
+      u >= bounds.minU - pad
+      && u <= bounds.maxU + pad
+      && v >= bounds.minV - pad
+      && v <= bounds.maxV + pad
+    );
+  }
+  const rect = unionSlotBounds(slots);
+  return (
+    u >= rect.minU - pad
+    && u <= rect.maxU + pad
+    && v >= rect.minV - pad
+    && v <= rect.maxV + pad
+  );
 }

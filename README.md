@@ -20,13 +20,7 @@ npm run build
 
 ## Car model
 
-`public/models/supra.optimized.glb` is an original stand-in body, generated to sit on the same placement grid as the studio:
-
-```bash
-npm run model
-```
-
-The configurator was built around [Toyota Supra MK5 A90](https://skfb.ly/oF6Uy) by lbrtwlk, licensed under [Creative Commons Attribution 4.0](http://creativecommons.org/licenses/by/4.0/). Sketchfab requires a signed-in download. Replace `public/models/supra.optimized.glb` with that GLB to use the licensed model. Keep the attribution.
+`public/models/supra.optimized.glb` contains [Toyota Supra MK5 A90](https://skfb.ly/oF6Uy) by lbrtwlk, licensed under [Creative Commons Attribution 4.0](http://creativecommons.org/licenses/by/4.0/).
 
 ## What you can do
 

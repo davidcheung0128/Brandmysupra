@@ -11,14 +11,17 @@ Brand My Supra is a browser studio for placing a sponsor logo on a white Toyota 
 - Stand-in Supra GLB, checks, and a production build.
 - Site committed on `main` (`b5bae40`) and pushed to the project remote.
 - Site is on https://github.com/davidcheung0128/Brandmysupra. `main` and `cursor/surface-decal-uv-bake-03f7` were pushed at `4ba1d09892dc388f84fa2b7f5b6fd9f724d97fbc`, which includes `b5bae40`.
+- Surface-normal `DecalGeometry` editing, panel tint (no rectangular slot planes), alpha-contour handles, coverage from slot selection, and UV-atlas bake into body paint.
+- CC BY Sketchfab Supra GLB installed as `public/models/supra.optimized.glb`.
 
 ## Now
 
-1. Finish the surface-decal work on `cursor/surface-decal-uv-bake-03f7`, then commit it. Draft modules exist and are not hooked up.
+1. Tune panel frames against the Sketchfab mesh if a placement feels off.
+2. Improve UV bake where body-paint islands overlap in the atlas.
 
 ## Surface decals and UV bake
 
-Branch: `cursor/surface-decal-uv-bake-03f7`.
+Branch: `cursor/surface-decal-uv-bake-03f7` (landed on local `main` via `src/placement.js`, `src/logo.js`, and studio rewire).
 
 While editing, project the logo with `DecalGeometry`:
 
@@ -30,38 +33,21 @@ While editing, project the logo with `DecalGeometry`:
 
 When placement is approved, bake a livery:
 
-- Draw each logo into a transparent canvas that matches the body UV atlas.
+- Draw each logo into a transparent canvas matching the car’s UV atlas.
 - Use that canvas as a `CanvasTexture` on the body-paint material.
 - Keep the placement record so the livery can be edited again.
 
-Placement record, in model space:
-
-```json
-{
-  "panelMesh": "hood",
-  "surfacePoint": [0, 0, 0],
-  "surfaceNormal": [0, 1, 0],
-  "uvCenter": [0, 0],
-  "rotation": 0,
-  "scale": 0.8,
-  "selectedSlotIds": ["hood-1", "hood-2"],
-  "logoAssetId": "..."
-}
-```
-
 Slots stay auction data. They should not stay as a grid of planes on the car:
 
-- Choosing a panel tints that body mesh.
+- Choosing a panel tints that body region.
 - More selected slots increase the allowed logo coverage.
 - After upload, hide the panel tint and show four handles on the logo’s visible contour.
 - Clip the decal to the panel mask.
 - Trim transparent padding, keep the artwork’s aspect ratio, and use the alpha as the shape.
 
-UI stays instrument-grade: the car takes most of the viewport, one narrow control rail, one red accent, a rotation dial, a scale track, drag-on-body positioning, and one bid button.
-
 ## Later
 
-- Replace `public/models/supra.optimized.glb` with the CC BY Sketchfab model and keep the lbrtwlk attribution. The stand-in does not have a clean non-overlapping exterior UV atlas; the real model needs that before UV baking is trustworthy.
+- Refine exterior UV islands if multi-winner liveries bleed across panels.
 - Stripe deposits at 100% of the bid, refunds for outbid and unsuccessful bidders, and a refund if the Supra is not purchased.
 - Accounts, logo approval, and an admin screen.
 - Auction close, winner livery on the public car, and the purchase-deadline refund.

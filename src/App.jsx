@@ -3,7 +3,7 @@ import { useGLTF } from "@react-three/drei";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { ALL_SLOTS, INITIAL_BIDS, PANELS, SLOT_MAP } from "./slots.js";
-import { isCompanyEmail, money, nextBidForSlots } from "./domain.js";
+import { money, nextBidForSlots } from "./domain.js";
 import {
   clampToPlacementRegion,
   isEntirePanelSelected,
@@ -21,17 +21,11 @@ import {
   placementFromHit,
   projectOntoPaintMeshes,
   updatePlacement,
-  uvScaleFromHit,
   worldNormalFromHit,
   worldToModelPoint,
   worldToPanelUV,
 } from "./placement.js";
-import {
-  bakePlacementToAtlas,
-  canvasToObjectUrl,
-  logoWorldSize,
-  prepareLogo,
-} from "./logo.js";
+import { logoWorldSize, prepareLogo } from "./logo.js";
 import CinemaCanvas from "./CinemaCanvas.jsx";
 import CustomCursor from "./motion/CustomCursor.jsx";
 import MagneticButton from "./motion/MagneticButton.jsx";
@@ -358,7 +352,6 @@ function SupraModel({
   setDragging,
   checkpoint,
   locked,
-  baked,
   onPanelPick,
   paintApiRef,
   interactive = true,
@@ -436,43 +429,17 @@ function SupraModel({
     paintApiRef.current = { paintMeshes, paintMaterials };
   }, [paintApiRef, paintMeshes, paintMaterials]);
 
-  useEffect(() => {
-    if (!baked?.texture) {
-      paintMaterials.forEach((material) => {
-        if (material.map) {
-          material.map.dispose();
-          material.map = null;
-          material.color.set("#deded9");
-          material.needsUpdate = true;
-        }
-      });
-      return;
-    }
-    const target = paintMeshes.find((mesh) => mesh.uuid === baked.meshUuid);
-    const material = target
-      ? (Array.isArray(target.material) ? target.material.find((entry) => entry.name === "Supra_body_paint") : target.material)
-      : paintMaterials[0];
-    if (!material) return;
-    if (material.map) material.map.dispose();
-    material.map = baked.texture;
-    material.map.colorSpace = THREE.SRGBColorSpace;
-    material.map.flipY = false;
-    material.map.needsUpdate = true;
-    material.color.set("#ffffff");
-    material.needsUpdate = true;
-  }, [baked, paintMaterials, paintMeshes]);
-
   const panel = selected.length ? PANELS[SLOT_MAP[selected[0]].panel] : null;
   const bounds = selected.length ? slotBounds(selected) : null;
   // The logo fits the chosen section itself: 100% scale fills the selected slots' bounds.
   const maxWidth = bounds ? bounds.width : 1;
   const maxHeight = bounds ? bounds.height : 1;
-  const showDecal = logoUrl && placement && selected.length > 0 && !baked;
+  const showDecal = logoUrl && placement && selected.length > 0;
 
   return (
     <>
       <primitive object={model} />
-      {interactive && panel && !baked && <SectionOutlines panel={panel} selectedIds={selected} paintMeshes={paintMeshes} />}
+      {interactive && panel && !locked && <SectionOutlines panel={panel} selectedIds={selected} paintMeshes={paintMeshes} />}
       {showDecal && (
         <SurfaceDecal
           url={logoUrl}
@@ -492,7 +459,7 @@ function SupraModel({
         setPlacement={setPlacement}
         setDragging={setDragging}
         checkpoint={checkpoint}
-        locked={locked || Boolean(baked)}
+        locked={locked}
         onPanelPick={onPanelPick}
         hasLogo={Boolean(logoUrl)}
         enabled={interactive}
@@ -502,37 +469,14 @@ function SupraModel({
 }
 
 function BidModal({ selected, amount, onClose }) {
-  const [email, setEmail] = useState("");
-  const [company, setCompany] = useState("");
-  const [error, setError] = useState("");
-  const [ready, setReady] = useState(false);
-
-  function submit(event) {
-    event.preventDefault();
-    if (!isCompanyEmail(email)) {
-      setError("Please enter a valid company email");
-      setReady(false);
-      return;
-    }
-    setError("");
-    setReady(true);
-  }
-
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="bid-modal" role="dialog" aria-modal="true" aria-labelledby="bid-title" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close bid form">×</button>
-        <p className="eyebrow">PLACE THE NEXT BID</p>
-        <h2 id="bid-title">{selected.length} slot{selected.length === 1 ? "" : "s"}</h2>
-        <div className="bid-total"><span>Next bid</span><strong>{money(amount)}</strong></div>
-        <form onSubmit={submit} noValidate>
-          <label>Company / brand<input value={company} onChange={(event) => setCompany(event.target.value)} required /></label>
-          <label>Company email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={Boolean(error)} required /></label>
-          {error && <p className="form-error" role="alert">{error}</p>}
-          {ready && <p className="payment-note" role="status">Company email accepted. Payments are not enabled yet.</p>}
-          <button className="primary-button full" type="submit">Continue to payment <span>→</span></button>
-        </form>
-        <p className="fine-print">No payment will be taken in this prototype.</p>
+        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        <p className="eyebrow">{selected.length} slot{selected.length === 1 ? "" : "s"} · {money(amount)}</p>
+        <h2 id="bid-title">Bidding hasn't started yet</h2>
+        <p className="fine-print">Your placement is saved on this page. Check back when the auction opens.</p>
+        <button className="primary-button full" type="button" onClick={onClose}>Close</button>
       </section>
     </div>
   );
@@ -581,8 +525,7 @@ export default function App() {
   const [logoUrl, setLogoUrl] = useState("");
   const [logoMeta, setLogoMeta] = useState(null);
   const [placement, setPlacement] = useState(() => seedPlacement(["driverDoor-1"]));
-  const [baked, setBaked] = useState(null);
-  const [baking, setBaking] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [fileName, setFileName] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [processingLogo, setProcessingLogo] = useState(false);
@@ -618,7 +561,7 @@ export default function App() {
     const next = [PANELS[tour.panelKey].slots[0].id];
     setSelected(next);
     setPlacement(seedPlacement(next, paintApiRef.current.paintMeshes));
-    setBaked(null);
+    setConfirmed(false);
     setPastPlacements([]);
     setFuturePlacements([]);
     // Only follow scroll chapter changes — not manual selection.
@@ -635,17 +578,8 @@ export default function App() {
   }, [selected, placement, progress]);
 
   useEffect(() => () => logoUrl && URL.revokeObjectURL(logoUrl), [logoUrl]);
-  useEffect(() => () => {
-    if (baked?.objectUrl) URL.revokeObjectURL(baked.objectUrl);
-    if (baked?.texture) baked.texture.dispose();
-  }, [baked]);
-
-  function clearBake() {
-    setBaked(null);
-  }
-
   function editPlacement(next) {
-    clearBake();
+    setConfirmed(false);
     setPlacement(next);
   }
 
@@ -668,7 +602,7 @@ export default function App() {
     const previous = pastPlacements[pastPlacements.length - 1];
     setPastPlacements((items) => items.slice(0, -1));
     setFuturePlacements((items) => [placement, ...items]);
-    clearBake();
+    setConfirmed(false);
     setPlacement(previous);
   }
 
@@ -677,13 +611,13 @@ export default function App() {
     const next = futurePlacements[0];
     setPastPlacements((items) => [...items, placement]);
     setFuturePlacements((items) => items.slice(1));
-    clearBake();
+    setConfirmed(false);
     setPlacement(next);
   }
 
   function toggleSlot(id) {
     const panel = SLOT_MAP[id].panel;
-    clearBake();
+    setConfirmed(false);
     setSelected((current) => {
       let next;
       if (current.length && SLOT_MAP[current[0]].panel !== panel) next = [id];
@@ -700,7 +634,7 @@ export default function App() {
   }
 
   function choosePanel(panelKey) {
-    clearBake();
+    setConfirmed(false);
     const next = [PANELS[panelKey].slots[0].id];
     setSelected(next);
     setPlacement(seedPlacement(next, paintApiRef.current.paintMeshes));
@@ -716,52 +650,6 @@ export default function App() {
     }
   }
 
-  async function bakePlacement() {
-    if (!logoUrl || !placement || !selected.length) return;
-    setBaking(true);
-    setUploadError("");
-    try {
-      const meshes = paintApiRef.current.paintMeshes || [];
-      const mesh = meshes.find((entry) => entry.uuid === placement.meshUuid) || meshes[0];
-      if (!mesh) throw new Error("Paint mesh is not ready yet");
-
-      mesh.updateWorldMatrix(true, false);
-      const { position: localPos } = localProjectorFromPlacement(placement, mesh);
-      const worldPoint = mesh.localToWorld(localPos.clone());
-      const worldNormal = placement.localNormal
-        ? new THREE.Vector3(...placement.localNormal).transformDirection(mesh.matrixWorld).normalize()
-        : new THREE.Vector3(...placement.surfaceNormal).normalize();
-      const raycaster = new THREE.Raycaster(
-        worldPoint.clone().addScaledVector(worldNormal, 0.25),
-        worldNormal.clone().multiplyScalar(-1),
-      );
-      const hit = raycaster.intersectObject(mesh, false)[0];
-      const density = hit ? uvScaleFromHit(hit) : { uPerMeter: 0.28, vPerMeter: 0.28 };
-      const canvas = await bakePlacementToAtlas({
-        placement: hit
-          ? updatePlacement(placement, {
-            uvCenter: hit.uv ? [hit.uv.x, hit.uv.y] : placement.uvCenter,
-            surfacePoint: worldPoint.toArray(),
-            surfaceNormal: worldNormal.toArray(),
-          })
-          : placement,
-        logoUrl,
-        uPerMeter: density.uPerMeter,
-        vPerMeter: density.vPerMeter,
-      });
-      const objectUrl = await canvasToObjectUrl(canvas);
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.flipY = false;
-      texture.needsUpdate = true;
-      setBaked({ texture, objectUrl, meshUuid: mesh.uuid, placement: { ...placement } });
-    } catch (error) {
-      setUploadError(error.message);
-    } finally {
-      setBaking(false);
-    }
-  }
-
   async function uploadLogo(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -770,7 +658,7 @@ export default function App() {
     try {
       const prepared = await prepareLogo(file);
       if (logoUrl) URL.revokeObjectURL(logoUrl);
-      clearBake();
+      setConfirmed(false);
       setLogoUrl(prepared.url);
       setLogoMeta({ aspect: prepared.aspect, hull: prepared.hull, width: prepared.width, height: prepared.height });
       setFileName(file.name);
@@ -828,8 +716,7 @@ export default function App() {
                   setPlacement={editPlacement}
                   setDragging={setDragging}
                   checkpoint={checkpoint}
-                  locked={Boolean(baked)}
-                  baked={baked}
+                  locked={confirmed}
                   onPanelPick={choosePanel}
                   paintApiRef={paintApiRef}
                   interactive={interactive}
@@ -837,8 +724,8 @@ export default function App() {
               )}
             </CinemaCanvas>
             <div className="viewer-hint cinema-hint" style={{ opacity: Math.max(railOpacity, panelCardOpacity * 0.85) }}>
-              {baked
-                ? "BAKED INTO BODY UV TEXTURE · SCROLL FOR THE NEXT PANEL"
+              {confirmed
+                ? "PLACEMENT CONFIRMED · SCROLL FOR THE NEXT PANEL"
                 : logoUrl
                   ? "DRAG TO PLACE · HOLD RIGHT-CLICK TO ORBIT · CUBE SNAPS VIEW"
                   : phase === "configurator"
@@ -902,7 +789,7 @@ export default function App() {
             ) : (
               <>
                 <div className="rail-header">
-                  <div><small>LOGO CONFIGURATOR</small><b>{baked ? "Placement baked" : logoUrl ? "Fine tune" : interactive ? "Choose placement" : "Unlocking…"}</b></div>
+                  <div><small>LOGO CONFIGURATOR</small><b>{confirmed ? "Placement confirmed" : logoUrl ? "Fine tune" : interactive ? "Choose placement" : "Unlocking…"}</b></div>
                   <div className="rail-header-actions">
                     <div className="history-controls" aria-label="Placement history">
                       <button onClick={undoTransform} disabled={!pastPlacements.length || !interactive} aria-label="Undo placement">↶</button>
@@ -954,7 +841,7 @@ export default function App() {
                   ))}
                 </div>
                 <p className="coverage-readout">{Math.round(coverage * 100)}% panel coverage</p>
-                <button className="text-button" disabled={!interactive} onClick={() => { clearBake(); setSelected(PANELS[activePanel].slots.map((slot) => slot.id)); setPlacement(seedPlacement(PANELS[activePanel].slots.map((slot) => slot.id), paintApiRef.current.paintMeshes)); }}>Select entire area</button>
+                <button className="text-button" disabled={!interactive} onClick={() => { setConfirmed(false); setSelected(PANELS[activePanel].slots.map((slot) => slot.id)); setPlacement(seedPlacement(PANELS[activePanel].slots.map((slot) => slot.id), paintApiRef.current.paintMeshes)); }}>Select entire area</button>
 
                 <div className="control-step"><span>02</span><div><b>Upload your logo</b><p>Transparent PNG or SVG works best.</p></div></div>
                 <label className={`upload-button ${!interactive ? "is-disabled" : ""}`}><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={uploadLogo} disabled={processingLogo || !interactive} /><span>{processingLogo ? "Preparing logo…" : fileName || "Choose logo file"}</span><b>＋</b></label>
@@ -962,11 +849,11 @@ export default function App() {
 
                 {logoUrl && placement && (
                   <div className="transform-controls tactile-panel">
-                    {baked ? (
+                    {confirmed ? (
                       <div className="baked-status">
                         <span>✓</span>
-                        <div><b>UV texture baked</b><small>Editable placement kept</small></div>
-                        <button type="button" onClick={clearBake}>Edit</button>
+                        <div><b>Placement confirmed</b><small>You can still edit it</small></div>
+                        <button type="button" onClick={() => setConfirmed(false)}>Edit</button>
                       </div>
                     ) : (
                       <>
@@ -984,16 +871,18 @@ export default function App() {
                         </label>
                         <div className="placement-actions">
                           <button type="button" className="reset-button" onClick={() => { checkpoint(); editPlacement(updatePlacement(placement, { scale: DEFAULT_SCALE, rotation: 0 })); }}>Reset</button>
-                          <button type="button" className="bake-button" onClick={bakePlacement} disabled={baking}>{baking ? "Baking…" : "Bake to UV"}</button>
+                          <button type="button" className="bake-button" onClick={() => setConfirmed(true)}>Confirm</button>
                         </div>
                       </>
                     )}
                   </div>
                 )}
                 <div className="selection-summary"><span>{selected.length} slot{selected.length === 1 ? "" : "s"} selected</span><strong>{money(amount)}</strong><small>next combined bid</small></div>
-                <MagneticButton as="button" className="primary-button full" onClick={() => setModalOpen(true)}>
-                  Place bid <span>→</span>
-                </MagneticButton>
+                {confirmed && (
+                  <MagneticButton as="button" className="primary-button full" onClick={() => setModalOpen(true)}>
+                    Place bid <span>→</span>
+                  </MagneticButton>
+                )}
               </>
             )}
           </aside>
@@ -1015,7 +904,7 @@ export default function App() {
               <div><h3>{slot.label}</h3><p>{PANELS[slot.panel].label}</p></div>
               <div className="leader"><small>HELD BY</small><b>OPEN</b></div>
               <div className="current-bid"><small>CURRENT BID</small><b>{money(bids[slot.id])}</b></div>
-              <button onClick={() => { clearBake(); setSelected([slot.id]); setPlacement(seedPlacement([slot.id], paintApiRef.current.paintMeshes)); enterStudio(); }}>CUSTOMIZE <span>→</span></button>
+              <button onClick={() => { setConfirmed(false); setSelected([slot.id]); setPlacement(seedPlacement([slot.id], paintApiRef.current.paintMeshes)); enterStudio(); }}>CUSTOMIZE <span>→</span></button>
             </article>
           ))}
         </div>
@@ -1026,7 +915,7 @@ export default function App() {
         <RevealText as="h2">Three moves.</RevealText>
         <div className="steps">
           <article><span>01</span><h3>Choose your space</h3><p>Select one slot or combine adjacent slots on the same body panel for more coverage.</p></article>
-          <article><span>02</span><h3>Design it in 3D</h3><p>Upload your logo, drag it along the painted surface, and bake it into the body texture.</p></article>
+          <article><span>02</span><h3>Design it in 3D</h3><p>Upload your logo, drag it along the painted surface, then confirm your placement.</p></article>
           <article><span>03</span><h3>Win the auction</h3><p>Winning artwork is reviewed and becomes part of the final livery after the auction.</p></article>
         </div>
       </section>

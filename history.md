@@ -1,0 +1,44 @@
+# History
+
+A running log of what has been done on Brand My Supra. Newest entries are at the top. Update this file when a step lands or is blocked.
+
+## 2026-09-24 — Tracking files
+
+- Added `plan.md` and `history.md` so the studio plan and the work log live in the repo.
+
+## 2026-09-24 — GitHub push requested, not completed
+
+- Target repository: https://github.com/davidcheung0128/Brandmysupra
+- The remote exists and has no branches yet.
+- A push of `main` failed in this environment: Git has no GitHub username or token (`could not read Username for 'https://github.com'`). `gh` is not logged in.
+- The site is still only on the project remote, at commit `b5bae40` (`Add the Brand My Supra logo studio.`).
+
+## 2026-09-24 — Surface-decal branch started, not finished
+
+- Branch: `cursor/surface-decal-uv-bake-03f7`, created from `b5bae40`.
+- Uncommitted drafts only, not wired into the app and not committed:
+  - `src/placement.js` stores a placement as panel, model-space surface point, surface normal, panel UV, mesh UV, rotation, scale, and selected slot ids.
+  - `src/logo.js` trims transparent padding, builds an alpha convex hull, and drafts a body-paint canvas atlas.
+- `src/App.jsx` still uses the earlier projector: panel-aligned `DecalGeometry`, rectangular slot planes, and a panel-local bake preview. It does not import the new modules.
+
+## 2026-09-24 — Studio recovered and pushed to the project remote
+
+- The Codex share [Plan Supra logo customizer](https://chatgpt.com/s/cx_6ab487ca07cc8191a97cd045b1ce179e) had a working site and stopped on “make a github repo and push this website’s files.”
+- Source was rebuilt by replaying that chat’s file diffs. `npm run check` and `npm run build` passed.
+- Commit `b5bae40` on `main` adds the Vite + React Three Fiber studio:
+  - Landing page, “Your brand on my Supra,” scroll into the 3D studio.
+  - Twenty auction slots across hood, doors, roof, quarters, front bumper, and rear deck.
+  - Logo upload (PNG, JPG, WebP, SVG) with transparent padding removed.
+  - Drag, scale, rotate, undo/redo, and a bake-preview button.
+  - Bid form that rejects personal email domains and accepts a company email. Payments stay off.
+  - Purchase disclaimer and Sketchfab attribution.
+- Sketchfab’s CC BY Supra ([Toyota Supra MK5 A90](https://skfb.ly/oF6Uy) by lbrtwlk) needs a signed-in download, so `public/models/supra.optimized.glb` is an original stand-in on the same placement grid (`npm run model` regenerates it).
+- Dev server: http://127.0.0.1:43123
+
+## Earlier — Codex session, before this repo
+
+- Request: replicate https://brand-my-gt3rs.pages.dev/#auction for a white Mk5 Supra, with uploaded logos on the car.
+- Decisions recorded in that chat: full auction later, physical decals only if the car is purchased, about twenty slots, visitors reposition the logo, Forza-style 3D view, real payments later.
+- Payments were deferred. A company-email gate was requested instead of checkout.
+- The GLB was integrated in that session, then the showroom, curved decals, landing page, and a seven-step surface upgrade were described as done there. Those file versions are what `b5bae40` contains.
+- That session never created or pushed a repository.

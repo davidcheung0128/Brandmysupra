@@ -10,12 +10,11 @@ Brand My Supra is a browser studio for placing a sponsor logo on a white Toyota 
 - Company-email gate. Personal inboxes are rejected. No charge is taken.
 - Stand-in Supra GLB, checks, and a production build.
 - Site committed on `main` (`b5bae40`) and pushed to the project remote.
+- Site is on https://github.com/davidcheung0128/Brandmysupra. `main` and `cursor/surface-decal-uv-bake-03f7` were pushed at `4ba1d09892dc388f84fa2b7f5b6fd9f724d97fbc`, which includes `b5bae40`.
 
 ## Now
 
-1. Push `main` to https://github.com/davidcheung0128/Brandmysupra.
-   This environment has no GitHub credentials, so the push has to be retried with a token or `gh auth login` that can write to `davidcheung0128/Brandmysupra`.
-2. Finish the surface-decal work on `cursor/surface-decal-uv-bake-03f7`, then commit it. Draft modules exist and are not hooked up.
+1. Finish the surface-decal work on `cursor/surface-decal-uv-bake-03f7`, then commit it. Draft modules exist and are not hooked up.
 
 ## Surface decals and UV bake
 
